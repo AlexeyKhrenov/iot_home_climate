@@ -11,34 +11,32 @@ import (
 	"time"
 )
 
-func postClimateHandler(w http.ResponseWriter, r *http.Request) {
+func postClimateHandler(w http.ResponseWriter, r *http.Request) error {
 	err := r.ParseForm()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return err
 	}
 
 	temp, err := strconv.Atoi(r.FormValue("temp"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return err
 	}
 	humidity, err := strconv.Atoi(r.FormValue("humidity"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return err
 	}
 
 	timestamp := time.Now()
 
 	err = writeData("./sample_climate.txt", timestamp, temp, humidity)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return err
 	}
+
+	return nil
 }
 
-func getClimateHandler(w http.ResponseWriter, r *http.Request) {
+func getClimateHandler(w http.ResponseWriter, r *http.Request) error {
 	/*
 		_, err := time.Parse(time.RFC3339, r.URL.Query().Get("start"))
 		if err != nil {
@@ -51,15 +49,16 @@ func getClimateHandler(w http.ResponseWriter, r *http.Request) {
 	*/
 
 	data, err := readData("./sample_climate.txt")
-	fmt.Println(data)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return err
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		http.Error(w, "Failed to encode JSON", http.StatusInternalServerError)
+		return err
 	}
+
+	return nil
 }
 
 func readData(filePath string) ([]Measurement, error) {
@@ -119,9 +118,17 @@ func writeData(filePath string, timestamp time.Time, temp int, humidity int) err
 	return nil
 }
 
+func withErrorHandler(handler func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := handler(w, r); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}
+}
+
 func main() {
-	http.HandleFunc("GET /climate", getClimateHandler)
-	http.HandleFunc("POST /climate", postClimateHandler)
+	http.HandleFunc("GET /climate", withErrorHandler(getClimateHandler))
+	http.HandleFunc("POST /climate", withErrorHandler(postClimateHandler))
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
